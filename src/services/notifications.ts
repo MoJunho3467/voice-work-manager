@@ -1,0 +1,8 @@
+import { Platform } from 'react-native';
+import * as Notifications from 'expo-notifications';
+import type { Task } from '../types';
+import { setNotificationId } from './database';
+Notifications.setNotificationHandler({handleNotification:async()=>({shouldShowBanner:true,shouldShowList:true,shouldPlaySound:true,shouldSetBadge:false})});
+export async function configureNotifications(){if(Platform.OS==='android')await Notifications.setNotificationChannelAsync('task-reminders',{name:'업무 알림',importance:Notifications.AndroidImportance.HIGH,sound:'default',vibrationPattern:[0,250,250,250]})}
+export async function cancelTaskNotification(task:Pick<Task,'id'|'notificationId'>){if(task.notificationId){try{await Notifications.cancelScheduledNotificationAsync(task.notificationId)}catch{}await setNotificationId(task.id,null)}}
+export async function scheduleTaskNotification(task:Task){await cancelTaskNotification(task);if(task.status==='COMPLETED'||task.reminderMinutes===null)return null;const triggerAt=new Date(new Date(task.scheduledAt).getTime()-task.reminderMinutes*60000);if(triggerAt.getTime()<=Date.now())return null;const permission=await Notifications.getPermissionsAsync();let status=permission.status;if(status==='undetermined')status=(await Notifications.requestPermissionsAsync()).status;if(status!=='granted')return null;const id=await Notifications.scheduleNotificationAsync({content:{title:task.title,body:task.reminderMinutes===0?'업무 시간입니다.':`${task.reminderMinutes}분 뒤 예정된 업무입니다.`,data:{taskId:task.id}},trigger:{type:Notifications.SchedulableTriggerInputTypes.DATE,date:triggerAt,channelId:'task-reminders'}});await setNotificationId(task.id,id);return id}
