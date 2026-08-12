@@ -1,0 +1,25 @@
+{
+  "expo": {
+    "name": "음성 업무수첩",
+    "slug": "voice-work-manager",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "scheme": "voicework",
+    "plugins": [
+      "expo-router",
+      "expo-sqlite",
+      ["expo-notifications", { "defaultChannel": "task-reminders" }],
+      ["expo-speech-recognition", {
+        "microphonePermission": "업무 내용을 음성으로 입력하려면 마이크 권한이 필요합니다.",
+        "speechRecognitionPermission": "업무 내용을 텍스트로 바꾸려면 음성 인식 권한이 필요합니다."
+      }]
+    ],
+    "android": {
+      "package": "com.personal.voiceworkmanager",
+      "permissions": ["RECORD_AUDIO", "POST_NOTIFICATIONS", "SCHEDULE_EXACT_ALARM", "RECEIVE_BOOT_COMPLETED", "VIBRATE", "WAKE_LOCK"],
+      "adaptiveIcon": { "backgroundColor": "#E8F0FE" }
+    },
+    "experiments": { "typedRoutes": true }
+  }
+}

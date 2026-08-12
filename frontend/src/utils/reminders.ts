@@ -1,0 +1,5 @@
+import type {NotificationMode,ReminderDraft,ReminderRepeat} from '../types';
+export const MAX_REMINDERS=12;
+export function expandReminderRules(mode:NotificationMode,repeat:ReminderRepeat):ReminderDraft[]{const rules:ReminderDraft[]=[];const count=repeat.untilCompleted?MAX_REMINDERS:Math.min(repeat.repeatCount??MAX_REMINDERS,MAX_REMINDERS);for(let i=0;i<count;i+=1){const offset=repeat.startOffsetMinutes-repeat.intervalMinutes*i;if(offset<0&&!repeat.untilCompleted)break;rules.push({offsetMinutes:offset,mode})}if(repeat.includeDueTime&&!rules.some(r=>r.offsetMinutes===0))rules.push({offsetMinutes:0,mode});return rules.slice(0,MAX_REMINDERS).sort((a,b)=>b.offsetMinutes-a.offsetMinutes)}
+export const reminderDate=(scheduledAt:string,offsetMinutes:number)=>new Date(new Date(scheduledAt).getTime()-offsetMinutes*60000);
+export function uniqueReminderDrafts(rules:ReminderDraft[]){const seen=new Set<string>();return rules.filter(r=>{const key=`${r.offsetMinutes}:${r.mode}`;if(seen.has(key))return false;seen.add(key);return true}).slice(0,MAX_REMINDERS)}

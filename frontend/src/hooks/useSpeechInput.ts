@@ -1,0 +1,9 @@
+import {useEffect,useRef,useState} from 'react';import {AppState} from 'react-native';
+import {ExpoSpeechRecognitionModule,useSpeechRecognitionEvent} from 'expo-speech-recognition';
+export type SpeechState='idle'|'listening'|'processing'|'completed'|'failed';
+export function useSpeechInput(onResult:(text:string)=>void){const[state,setState]=useState<SpeechState>('idle');const[error,setError]=useState('');const active=useRef(false);
+ useSpeechRecognitionEvent('result',e=>{const text=e.results[0]?.transcript?.trim();if(e.isFinal){active.current=false;if(text){setState('completed');onResult(text)}else{setError('음성이 인식되지 않았습니다.');setState('failed')}}});
+ useSpeechRecognitionEvent('end',()=>{active.current=false;setState(s=>s==='listening'?'processing':s)});useSpeechRecognitionEvent('error',e=>{active.current=false;setError(e.message||'음성 인식 오류가 발생했습니다.');setState('failed')});
+ useEffect(()=>{const sub=AppState.addEventListener('change',s=>{if(s!=='active'&&active.current){ExpoSpeechRecognitionModule.abort();active.current=false;setState('idle')}});return()=>sub.remove()},[]);
+ const start=async()=>{if(active.current)return;setError('');try{if(!ExpoSpeechRecognitionModule.isRecognitionAvailable())throw new Error('이 기기는 음성 인식을 지원하지 않습니다.');const p=await ExpoSpeechRecognitionModule.requestPermissionsAsync();if(!p.granted)throw new Error('마이크 또는 음성 인식 권한이 거부되었습니다.');active.current=true;setState('listening');ExpoSpeechRecognitionModule.start({lang:'ko-KR',interimResults:true,continuous:false,maxAlternatives:1,requiresOnDeviceRecognition:false})}catch(e){active.current=false;setError(e instanceof Error?e.message:'음성 인식을 시작할 수 없습니다.');setState('failed')}};
+ const cancel=()=>{if(active.current)ExpoSpeechRecognitionModule.abort();active.current=false;setState('idle')};return{state,error,start,cancel};}
