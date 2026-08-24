@@ -1,0 +1,16 @@
+group = 'expo.modules.androidalarm'
+version = '0.1.0'
+
+if (project.parent != null) {
+  apply plugin: 'com.android.library'
+  apply plugin: 'expo-module-gradle-plugin'
+
+  android {
+    namespace 'expo.modules.androidalarm'
+
+    defaultConfig {
+      versionCode 1
+      versionName '0.1.0'
+    }
+  }
+}

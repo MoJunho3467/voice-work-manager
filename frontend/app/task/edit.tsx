@@ -1,0 +1,33 @@
+import { router, useLocalSearchParams } from "expo-router";
+import { useEffect, useState } from "react";
+import { ScreenLoading } from "@/components/UI";
+import { TaskForm } from "@/components/TaskForm";
+import { useTasks } from "@/context/TaskContext";
+import type { Task } from "@/types";
+import { getTask } from "@/services/database";
+import { toLocalIso } from "@/utils/date";
+export default function Edit() {
+  const { id, date } = useLocalSearchParams<{ id?: string; date?: string }>();
+  const { create, update } = useTasks();
+  const [item, setItem] = useState<Task | null>(null);
+  const [loading, setLoading] = useState(!!id);
+  useEffect(() => {
+    if (id)
+      getTask(id).then((x) => {
+        setItem(x);
+        setLoading(false);
+      });
+  }, [id]);
+  if (loading) return <ScreenLoading />;
+  const initial = item ?? (date ? { scheduledAt: toLocalIso(date, 9, 0) } : {});
+  return (
+    <TaskForm
+      initial={initial}
+      submitLabel={id ? "수정 저장" : "일정 등록"}
+      onSubmit={async (d) => {
+        const t = id ? await update(id, d) : await create(d);
+        router.replace(`/task/${t.id}`);
+      }}
+    />
+  );
+}

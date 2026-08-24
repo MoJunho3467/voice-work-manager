@@ -1,0 +1,70 @@
+{
+  "expo": {
+    "name": "음성 업무수첩",
+    "slug": "voice-work-manager",
+    "version": "2.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "scheme": "voicework",
+    "icon": "./assets/app-icon.png",
+    "plugins": [
+      "expo-router",
+      "expo-sqlite",
+      [
+        "expo-notifications",
+        {
+          "defaultChannel": "task-reminders",
+          "sounds": ["./assets/sounds/task_notification.wav"]
+        }
+      ],
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "업무 내용을 음성으로 입력하려면 마이크 권한이 필요합니다.",
+          "speechRecognitionPermission": "업무 내용을 텍스트로 바꾸려면 음성 인식 권한이 필요합니다."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "메모에 사진을 첨부하려면 사진 접근 권한이 필요합니다.",
+          "cameraPermission": "메모 사진을 촬영하려면 카메라 권한이 필요합니다."
+        }
+      ]
+    ],
+    "android": {
+      "package": "com.personal.voiceworkmanager",
+      "softwareKeyboardLayoutMode": "resize",
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.SCHEDULE_EXACT_ALARM",
+        "android.permission.USE_FULL_SCREEN_INTENT",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.VIBRATE",
+        "android.permission.WAKE_LOCK"
+      ],
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/app-icon.png",
+        "backgroundColor": "#4D21D7"
+      }
+    },
+    "ios": {
+      "bundleIdentifier": "com.personal.voiceworkmanager",
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSSpeechRecognitionUsageDescription": "업무 내용을 텍스트로 바꾸려면 음성 인식 권한이 필요합니다.",
+        "NSMicrophoneUsageDescription": "업무 내용을 음성으로 입력하려면 마이크 권한이 필요합니다."
+      }
+    },
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "18e8451a-f079-4635-8894-4527adf27b4a"
+      }
+    }
+  }
+}
