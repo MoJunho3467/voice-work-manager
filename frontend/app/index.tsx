@@ -48,6 +48,7 @@ export default function Schedule() {
   const { tasks, loading, complete } = useTasks();
   const [selected, setSelected] = useState(localDateKey());
   const [calendarView, setCalendarView] = useState(true);
+  const [calendarGestureActive, setCalendarGestureActive] = useState(false);
   const [showSpeech, setShowSpeech] = useState(false);
   const speech = useSpeechInput();
   const marked = useMemo(() => {
@@ -85,6 +86,7 @@ export default function Schedule() {
   return (
     <View style={styles.page}>
       <ScrollView
+        scrollEnabled={!calendarGestureActive}
         contentContainerStyle={[
           styles.content,
           { paddingTop: 18 + insets.top, paddingBottom: 110 + insets.bottom },
@@ -122,9 +124,10 @@ export default function Schedule() {
           markedDates={marked}
           onDayPress={(day) => setSelected(day.dateString)}
           onExpandedChange={(expanded) => {
-            if (!expanded) setSelected(localDateKey());
             setCalendarView(expanded);
           }}
+          onGestureActiveChange={setCalendarGestureActive}
+          onTodayPress={() => setSelected(localDateKey())}
           theme={{
             todayTextColor: "#7047E8",
             arrowColor: "#7047E8",

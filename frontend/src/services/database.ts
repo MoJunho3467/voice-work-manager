@@ -86,6 +86,13 @@ CREATE TABLE IF NOT EXISTS task_memos(id TEXT PRIMARY KEY NOT NULL,task_id TEXT 
   await db.execAsync(`CREATE TABLE IF NOT EXISTS daily_memos(id TEXT PRIMARY KEY NOT NULL,memo_date TEXT NOT NULL,content TEXT NOT NULL,pinned INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL,updated_at TEXT NOT NULL);CREATE INDEX IF NOT EXISTS idx_daily_memos_date ON daily_memos(memo_date,created_at);
 CREATE TABLE IF NOT EXISTS memo_images(id TEXT PRIMARY KEY NOT NULL,memo_id TEXT NOT NULL,file_name TEXT NOT NULL,relative_path TEXT NOT NULL,created_at TEXT NOT NULL,FOREIGN KEY(memo_id) REFERENCES daily_memos(id) ON DELETE CASCADE);
 CREATE INDEX IF NOT EXISTS idx_memo_images_memo ON memo_images(memo_id,created_at);`);
+  const memoImageColumns = await db.getAllAsync<{ name: string }>(
+    "PRAGMA table_info(memo_images)",
+  );
+  if (!memoImageColumns.some((column) => column.name === "comment"))
+    await db.execAsync(
+      "ALTER TABLE memo_images ADD COLUMN comment TEXT NOT NULL DEFAULT ''",
+    );
   await db.execAsync(`CREATE TABLE IF NOT EXISTS speech_terms(id TEXT PRIMARY KEY NOT NULL,term TEXT NOT NULL UNIQUE,created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS speech_corrections(id TEXT PRIMARY KEY NOT NULL,wrong_text TEXT NOT NULL UNIQUE,correct_text TEXT NOT NULL,created_at TEXT NOT NULL);`);
   const columns = await db.getAllAsync<{ name: string }>(
@@ -128,7 +135,7 @@ CREATE INDEX IF NOT EXISTS idx_tasks_scheduled ON tasks(scheduled_at);CREATE IND
       ).toISOString(),
       row.id,
     );
-  await db.execAsync("PRAGMA user_version=4;");
+  await db.execAsync("PRAGMA user_version=5;");
 }
 
 const mapReminder = (r: ReminderRow): ReminderRule => ({
@@ -309,7 +316,7 @@ export async function listDailyMemos(date?: string) {
   if (rows.length === 0) return [];
   const placeholders = rows.map(() => "?").join(",");
   const images = await db.getAllAsync<MemoImage>(
-    `SELECT id,memo_id as memoId,file_name as fileName,relative_path as relativePath,created_at as createdAt FROM memo_images WHERE memo_id IN (${placeholders}) ORDER BY created_at`,
+    `SELECT id,memo_id as memoId,file_name as fileName,relative_path as relativePath,comment,created_at as createdAt FROM memo_images WHERE memo_id IN (${placeholders}) ORDER BY created_at`,
     ...rows.map((m: any) => m.id),
   );
   return rows.map(
@@ -372,6 +379,7 @@ export async function addMemoImage(
   memoId: string,
   fileName: string,
   relativePath: string,
+  comment = "",
 ) {
   const db = await dbPromise;
   const image: MemoImage = {
@@ -379,17 +387,23 @@ export async function addMemoImage(
     memoId,
     fileName,
     relativePath,
+    comment,
     createdAt: new Date().toISOString(),
   };
   await db.runAsync(
-    "INSERT INTO memo_images VALUES(?,?,?,?,?)",
+    "INSERT INTO memo_images(id,memo_id,file_name,relative_path,comment,created_at) VALUES(?,?,?,?,?,?)",
     image.id,
     image.memoId,
     image.fileName,
     image.relativePath,
+    image.comment,
     image.createdAt,
   );
   return image;
+}
+export async function updateMemoImageComment(id: string, comment: string) {
+  const db = await dbPromise;
+  await db.runAsync("UPDATE memo_images SET comment=? WHERE id=?", comment, id);
 }
 export async function deleteMemoImage(id: string) {
   const db = await dbPromise;
@@ -499,7 +513,7 @@ export async function saveSettings(s: AppSettings) {
 export async function exportData() {
   const dailyMemos = await listDailyMemos();
   return {
-    schemaVersion: 6,
+    schemaVersion: 7,
     exportedAt: new Date().toISOString(),
     tasks: await listTasks(),
     memos: await (
@@ -519,7 +533,7 @@ export async function importData(raw: unknown, mode: "merge" | "replace") {
     throw new Error("지원하지 않는 백업 파일입니다.");
   const data = raw as Partial<Backup>;
   if (
-    ![1, 2, 3, 4, 5, 6].includes(data.schemaVersion ?? 0) ||
+    ![1, 2, 3, 4, 5, 6, 7].includes(data.schemaVersion ?? 0) ||
     !Array.isArray(data.tasks) ||
     !Array.isArray(data.memos)
   )
@@ -616,11 +630,12 @@ export async function importData(raw: unknown, mode: "merge" | "replace") {
     for (const image of data.memoImages ?? [])
       if (image.id && image.memoId && image.fileName && image.relativePath)
         await db.runAsync(
-          "INSERT OR REPLACE INTO memo_images VALUES(?,?,?,?,?)",
+          "INSERT OR REPLACE INTO memo_images(id,memo_id,file_name,relative_path,comment,created_at) VALUES(?,?,?,?,?,?)",
           image.id,
           image.memoId,
           image.fileName,
           image.relativePath,
+          image.comment ?? "",
           image.createdAt ?? new Date().toISOString(),
         );
     if (data.settings) await saveSettings(data.settings);

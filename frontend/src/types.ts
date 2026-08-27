@@ -48,6 +48,7 @@ export type MemoImage = {
   memoId: string;
   fileName: string;
   relativePath: string;
+  comment: string;
   createdAt: string;
 };
 export type DailyMemo = {

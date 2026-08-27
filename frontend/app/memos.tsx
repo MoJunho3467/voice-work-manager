@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Image,
   Keyboard,
@@ -24,6 +24,7 @@ import {
   listDailyMemoDates,
   listDailyMemos,
   updateDailyMemo,
+  updateMemoImageComment,
 } from "@/services/database";
 import {
   deleteMemoImageFile,
@@ -39,6 +40,9 @@ import { CollapsibleCalendar } from "@/components/CollapsibleCalendar";
 const dateLabel = (key: string) =>
   Number(key.slice(5, 7)) + "월 " + Number(key.slice(8, 10)) + "일 메모";
 
+type PickedMemoImage = { asset: ImagePicker.ImagePickerAsset; comment: string };
+type SpeechTarget = { kind: "memo" } | { kind: "kept"; id: string } | { kind: "picked"; index: number };
+
 export default function Memos() {
   const insets = useSafeAreaInsets();
   const [selected, setSelected] = useState(localDateKey());
@@ -46,20 +50,25 @@ export default function Memos() {
   const [memoDates, setMemoDates] = useState<string[]>([]);
   const [editor, setEditor] = useState(false);
   const [calendarView, setCalendarView] = useState(false);
+  const [calendarGestureActive, setCalendarGestureActive] = useState(false);
   const [text, setText] = useState("");
   const [editing, setEditing] = useState<DailyMemo | null>(null);
   const [saving, setSaving] = useState(false);
-  const [pickedImages, setPickedImages] = useState<
-    ImagePicker.ImagePickerAsset[]
-  >([]);
+  const [pickedImages, setPickedImages] = useState<PickedMemoImage[]>([]);
   const [keptImages, setKeptImages] = useState<MemoImage[]>([]);
   const [removedImages, setRemovedImages] = useState<MemoImage[]>([]);
   const [previewUri, setPreviewUri] = useState<string | null>(null);
+  const speechTarget = useRef<SpeechTarget>({ kind: "memo" });
   const speech = useSpeechInput((value) => {
-    if (value.trim())
-      setText((current) =>
-        current.trim() ? current.trim() + "\n" + value.trim() : value.trim(),
-      );
+    const addition = value.trim();
+    if (!addition) return;
+    const target = speechTarget.current;
+    if (target.kind === "memo")
+      setText((current) => current.trim() ? current.trim() + "\n" + addition : addition);
+    else if (target.kind === "kept")
+      setKeptImages((images) => images.map((image) => image.id === target.id ? { ...image, comment: appendComment(image.comment, addition) } : image));
+    else
+      setPickedImages((images) => images.map((image, index) => index === target.index ? { ...image, comment: appendComment(image.comment, addition) } : image));
   });
   const load = useCallback(async () => {
     const [items, dates] = await Promise.all([
@@ -111,7 +120,7 @@ export default function Memos() {
       );
       return;
     }
-    setPickedImages((v) => [...v, ...assets.slice(0, availableSlots)]);
+    setPickedImages((v) => [...v, ...assets.slice(0, availableSlots).map((asset) => ({ asset, comment: "" }))]);
     if (assets.length > availableSlots)
       appAlert(
         "사진 개수 확인",
@@ -156,9 +165,11 @@ export default function Memos() {
         await deleteMemoImage(image.id);
         deleteMemoImageFile(image.relativePath);
       }
-      for (const asset of pickedImages) {
-        const stored = await persistMemoImage(asset, memo.id);
-        await addMemoImage(memo.id, stored.fileName, stored.relativePath);
+      for (const image of keptImages)
+        await updateMemoImageComment(image.id, image.comment.trim());
+      for (const image of pickedImages) {
+        const stored = await persistMemoImage(image.asset, memo.id);
+        await addMemoImage(memo.id, stored.fileName, stored.relativePath, image.comment.trim());
       }
       closeEditor();
       await load();
@@ -176,14 +187,18 @@ export default function Memos() {
     await deleteDailyMemo(memo.id);
     await load();
   };
-  const toggleVoice = () => {
+  const toggleVoice = (target: SpeechTarget = { kind: "memo" }) => {
     Keyboard.dismiss();
     if (speech.state === "listening") speech.finish();
-    else if (speech.state !== "processing") speech.start();
+    else if (speech.state !== "processing") {
+      speechTarget.current = target;
+      speech.start();
+    }
   };
   return (
     <View style={st.page}>
       <ScrollView
+        scrollEnabled={!calendarGestureActive}
         contentContainerStyle={[
           st.content,
           { paddingTop: 20 + insets.top, paddingBottom: 140 + insets.bottom },
@@ -209,9 +224,10 @@ export default function Memos() {
           markedDates={calendarMarks}
           onDayPress={(day) => setSelected(day.dateString)}
           onExpandedChange={(expanded) => {
-            if (!expanded) setSelected(localDateKey());
             setCalendarView(expanded);
           }}
+          onGestureActiveChange={setCalendarGestureActive}
+          onTodayPress={() => setSelected(localDateKey())}
           theme={{ todayTextColor: "#7047E8", arrowColor: "#7047E8" }}
         />
         <View style={st.section}>
@@ -256,21 +272,14 @@ export default function Memos() {
                 })}
               </Text>
               {m.content ? <Text style={st.memoText}>{m.content}</Text> : null}
-              {m.images[0] ? (
-                <View>
-                  <Image
-                    source={{ uri: memoImageUri(m.images[0].relativePath) }}
-                    style={st.coverImage}
-                  />
-                  {m.images.length > 1 ? (
-                    <View style={st.imageCountBadge}>
-                      <Text style={st.imageCountText}>
-                        사진 {m.images.length}장
-                      </Text>
-                    </View>
-                  ) : null}
+              {m.images.map((image) => (
+                <View key={image.id} style={st.savedPhotoRow}>
+                  <Image source={{ uri: memoImageUri(image.relativePath) }} style={st.savedPhoto} />
+                  <Text style={[st.savedPhotoComment, !image.comment && st.savedPhotoPlaceholder]} numberOfLines={3}>
+                    {image.comment || "사진 코멘트 없음"}
+                  </Text>
                 </View>
-              ) : null}
+              ))}
               <Text style={st.hint}>눌러서 수정 · 길게 눌러 관리</Text>
             </Pressable>
           ))
@@ -303,24 +312,21 @@ export default function Memos() {
                 {keptImages.length + pickedImages.length}/{MAX_MEMO_IMAGES}장
               </Text>
             </View>
-            <TextInput
-              autoFocus
-              multiline
-              value={text}
-              onChangeText={setText}
-              placeholder="기억할 내용을 입력하세요"
-              style={st.input}
-            />
             {keptImages.length + pickedImages.length > 0 ? (
               <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={st.photoRow}
+                style={st.photoList}
+                contentContainerStyle={st.photoListContent}
+                nestedScrollEnabled
+                keyboardShouldPersistTaps="handled"
               >
                 {keptImages.map((image) => (
-                  <PhotoTile
+                  <PhotoCommentRow
                     key={image.id}
                     uri={memoImageUri(image.relativePath)}
+                    comment={image.comment}
+                    onChangeComment={(comment) => setKeptImages((images) => images.map((item) => item.id === image.id ? { ...item, comment } : item))}
+                    onVoice={() => toggleVoice({ kind: "kept", id: image.id })}
+                    voiceActive={speech.state === "listening" && speechTarget.current.kind === "kept" && speechTarget.current.id === image.id}
                     onPreview={setPreviewUri}
                     onRemove={() => {
                       setKeptImages((v) => v.filter((x) => x.id !== image.id));
@@ -328,14 +334,16 @@ export default function Memos() {
                     }}
                   />
                 ))}
-                {pickedImages.map((asset, index) => (
-                  <PhotoTile
-                    key={asset.uri + "-" + index}
-                    uri={asset.uri}
+                {pickedImages.map((image, index) => (
+                  <PhotoCommentRow
+                    key={image.asset.uri + "-" + index}
+                    uri={image.asset.uri}
+                    comment={image.comment}
+                    onChangeComment={(comment) => setPickedImages((images) => images.map((item, itemIndex) => itemIndex === index ? { ...item, comment } : item))}
+                    onVoice={() => toggleVoice({ kind: "picked", index })}
+                    voiceActive={speech.state === "listening" && speechTarget.current.kind === "picked" && speechTarget.current.index === index}
                     onPreview={setPreviewUri}
-                    onRemove={() =>
-                      setPickedImages((v) => v.filter((_, i) => i !== index))
-                    }
+                    onRemove={() => setPickedImages((v) => v.filter((_, i) => i !== index))}
                   />
                 ))}
               </ScrollView>
@@ -361,38 +369,31 @@ export default function Memos() {
                 ) : null}
               </View>
             ) : null}
-            <View style={st.attachActions}>
+            <View style={st.composer}>
               <Pressable
-                style={[
-                  st.attachButton,
-                  speech.state === "listening" && st.attachButtonActive,
-                ]}
-                onPress={toggleVoice}
+                style={st.composerButton}
+                onPress={() => appAlert("사진 추가", "추가 방법을 선택하세요.", [
+                  { text: "카메라로 촬영", onPress: takePhoto },
+                  { text: "갤러리에서 선택", onPress: choosePhotos },
+                  { text: "취소", style: "cancel" },
+                ])}
+              >
+                <Text style={st.composerPlus}>＋</Text>
+              </Pressable>
+              <TextInput
+                autoFocus
+                multiline
+                value={text}
+                onChangeText={setText}
+                placeholder="메모를 입력하세요"
+                style={st.composerInput}
+              />
+              <Pressable
+                style={[st.composerButton, speech.state === "listening" && speechTarget.current.kind === "memo" && st.composerButtonActive]}
+                onPress={() => toggleVoice({ kind: "memo" })}
                 disabled={speech.state === "processing"}
               >
-                <Text style={st.attachIcon}>
-                  {speech.state === "listening" ? "■" : "🎤"}
-                </Text>
-                <Text
-                  style={[
-                    st.attachText,
-                    speech.state === "listening" && st.attachTextActive,
-                  ]}
-                >
-                  {speech.state === "listening"
-                    ? "입력 종료"
-                    : speech.state === "processing"
-                      ? "처리 중…"
-                      : "음성 입력"}
-                </Text>
-              </Pressable>
-              <Pressable style={st.attachButton} onPress={takePhoto}>
-                <Text style={st.attachIcon}>📷</Text>
-                <Text style={st.attachText}>촬영</Text>
-              </Pressable>
-              <Pressable style={st.attachButton} onPress={choosePhotos}>
-                <Text style={st.attachIcon}>▧</Text>
-                <Text style={st.attachText}>앨범</Text>
+                <Text style={st.composerMic}>{speech.state === "listening" && speechTarget.current.kind === "memo" ? "■" : "🎤"}</Text>
               </Pressable>
             </View>
             <View style={st.actions}>
@@ -438,23 +439,47 @@ export default function Memos() {
   );
 }
 
-function PhotoTile({
+function appendComment(current: string, addition: string) {
+  return current.trim() ? `${current.trim()} ${addition}` : addition;
+}
+
+function PhotoCommentRow({
   uri,
+  comment,
+  onChangeComment,
+  onVoice,
+  voiceActive,
   onPreview,
   onRemove,
 }: {
   uri: string;
+  comment: string;
+  onChangeComment: (comment: string) => void;
+  onVoice: () => void;
+  voiceActive: boolean;
   onPreview: (uri: string) => void;
   onRemove: () => void;
 }) {
   return (
-    <View style={st.photoTile}>
+    <View style={st.photoCommentRow}>
       <Pressable onPress={() => onPreview(uri)}>
         <Image source={{ uri }} style={st.photo} />
       </Pressable>
       <Pressable style={st.removePhoto} onPress={onRemove}>
         <Text style={st.removePhotoText}>×</Text>
       </Pressable>
+      <View style={st.photoCommentBox}>
+        <TextInput
+          value={comment}
+          onChangeText={onChangeComment}
+          placeholder="사진 코멘트"
+          style={st.photoCommentInput}
+          multiline
+        />
+        <Pressable style={[st.commentMic, voiceActive && st.composerButtonActive]} onPress={onVoice}>
+          <Text style={st.commentMicText}>{voiceActive ? "■" : "🎤"}</Text>
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -544,12 +569,10 @@ const st = StyleSheet.create({
     fontWeight: "700",
     color: "#202330",
   },
-  coverImage: {
-    width: "100%",
-    height: 180,
-    borderRadius: 14,
-    backgroundColor: "#EEEAF7",
-  },
+  savedPhotoRow: { flexDirection: "row", alignItems: "center", gap: 11 },
+  savedPhoto: { width: 72, height: 72, borderRadius: 12, backgroundColor: "#EEEAF7" },
+  savedPhotoComment: { flex: 1, fontSize: 14, lineHeight: 20, color: "#343847" },
+  savedPhotoPlaceholder: { color: "#A0A6B3" },
   imageCountBadge: {
     position: "absolute",
     right: 10,
@@ -602,28 +625,29 @@ const st = StyleSheet.create({
   },
   sheetTitle: { fontSize: 21, fontWeight: "900" },
   photoLimit: { fontSize: 13, color: "#7047E8", fontWeight: "800" },
-  input: {
-    minHeight: 130,
-    maxHeight: 240,
+  photoList: { maxHeight: 300 },
+  photoListContent: { gap: 10, paddingVertical: 2 },
+  photoCommentRow: {
+    minHeight: 82,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    padding: 8,
+    borderRadius: 15,
+    backgroundColor: "#FAF8FF",
     borderWidth: 1,
-    borderColor: "#D8CAFA",
-    borderRadius: 16,
-    padding: 15,
-    fontSize: 17,
-    textAlignVertical: "top",
+    borderColor: "#E6DEFA",
   },
-  photoRow: { gap: 10, paddingVertical: 2, paddingRight: 8 },
-  photoTile: { width: 96, height: 96 },
   photo: {
-    width: 96,
-    height: 96,
-    borderRadius: 14,
+    width: 66,
+    height: 66,
+    borderRadius: 11,
     backgroundColor: "#EEEAF7",
   },
   removePhoto: {
     position: "absolute",
-    top: -6,
-    right: -6,
+    top: 1,
+    left: 61,
     width: 25,
     height: 25,
     borderRadius: 13,
@@ -639,6 +663,27 @@ const st = StyleSheet.create({
     lineHeight: 20,
     fontWeight: "900",
   },
+  photoCommentBox: {
+    flex: 1,
+    minHeight: 54,
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: 13,
+    backgroundColor: "#FFF",
+    borderWidth: 1,
+    borderColor: "#D8CAFA",
+  },
+  photoCommentInput: {
+    flex: 1,
+    minHeight: 52,
+    maxHeight: 82,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    fontSize: 15,
+    textAlignVertical: "center",
+  },
+  commentMic: { width: 42, height: 42, borderRadius: 12, alignItems: "center", justifyContent: "center", marginRight: 5 },
+  commentMicText: { fontSize: 18 },
   voiceStatus: {
     padding: 12,
     borderRadius: 13,
@@ -650,6 +695,21 @@ const st = StyleSheet.create({
   voiceFailed: { backgroundColor: "#FFF3F4", borderColor: "#F0B9C0" },
   voiceStatusText: { fontSize: 13, fontWeight: "800", color: "#5331C7" },
   voicePreview: { fontSize: 14, lineHeight: 20, color: "#343847" },
+  composer: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    gap: 7,
+    padding: 7,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#D8CAFA",
+    backgroundColor: "#FFF",
+  },
+  composerButton: { width: 44, height: 44, borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: "#F2EDFF" },
+  composerButtonActive: { backgroundColor: "#7047E8" },
+  composerPlus: { fontSize: 29, lineHeight: 32, color: "#6034D9", fontWeight: "600" },
+  composerMic: { fontSize: 20 },
+  composerInput: { flex: 1, minHeight: 44, maxHeight: 110, paddingHorizontal: 7, paddingVertical: 10, fontSize: 16, textAlignVertical: "center" },
   attachActions: { flexDirection: "row", gap: 9 },
   attachButton: {
     flex: 1,
